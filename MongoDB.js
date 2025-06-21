@@ -3,7 +3,7 @@ import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
 dotenv.config();
 
-const mongourl = process.env.Mongo_URL;
+const mongourl = process.env.Mongo_URL ; // || "mongodb://localhost:27017/smalltobigshop"; //= process.env.Mongo_URL ||
 const client = new MongoClient(mongourl);
 
 export async function MongoConnect() {

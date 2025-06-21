@@ -7,7 +7,7 @@ dotenv.config()
 
 const app = express();
 const db = await MongoConnect();
-const Port = process.env.PORT || 4000;
+const Port = process.env.PORT || 6000;
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
