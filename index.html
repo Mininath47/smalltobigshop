@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    
+    <div id="demo">
+    </div>
+    <script>
+        function load()
+        {
+            fetch("https://smalltobigshop.onrender.com/products")
+            .then((res)=>{
+                return res.json();
+            })
+            .then((res)=>{
+                res.map((items)=>{
+                  const db = document.querySelector("#demo");  
+                  const h2 = document.createElement("h2");
+                  const images = document.createElement("img");
+                  images.src = items.image;
+                  h2.textContent = items.title;
+
+                  db.append(h2,images)
+                })
+            })
+        }
+        load()
+    </script>
+</body>
+</html>
