@@ -42,6 +42,11 @@ app.get("/products", async (req, res) => {
   const projects = await demoCollection.find().toArray();
   res.json(projects);
 });
+app.get("/products/categories", async (req, res) => {
+  const projects = await demoCollection.find().toArray()
+  const categoriesdata =  projects.map((items)=>items.categories);
+  res.json(categoriesdata);
+});
 
 // Read Single (GET)
 app.get("/products/:id", async (req, res) => {
