@@ -1,79 +1,120 @@
 import express from "express";
-import cors from "cors";
-import { MongoConnect } from "./MongoDB.js";
-import process from "node:process";
 import dotenv from "dotenv";
-// import { createReadStream } from "node:fs/promises";
-dotenv.config()
+import cors from "cors";
 
+import { writeFile, unlink } from "fs/promises";
+import path from "path";
+import { existsSync } from "fs";
+import { MongoConnect } from "./MongoDB.js";
+
+dotenv.config();
 const app = express();
-const db = await MongoConnect();
-const Port = process.env.PORT || 6000;
 app.use(cors());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
+const db = await MongoConnect();
+const demoCollection = db.collection("demo")
+
+// Create (POST)
+app.post("/products", async (req, res) => {
+  const { title, price, category, description, imageBase64 } = req.body;
+
+  if (!imageBase64) return res.status(400).send("Image required");
+
+  const imageName = `${Date.now()}.png`;
+  const imagePath = path.join("images", imageName);
+
+  await writeFile(imagePath, imageBase64, "base64");
+
+  const result = await demoCollection.insertOne({
+    title,
+    price,
+    category,
+    description,
+    image: imageName,
+  });
+
+  res.status(201).json(result);
+});
+
+// Read All (GET)
 app.get("/products", async (req, res) => {
-    const collection = await db.collection("demo").find().toArray();
-    // const images = await createReadStream("./images/1750502271781.jpg");
-    // res.pipe(images);
-    res.send(collection);
+  const projects = await demoCollection.find().toArray();
+  res.json(projects);
 });
 
-app.get("/products/id/:id", async (req, res) => {
-    const id = parseInt(req.params.id);
-    const collection = await db.collection("demo").find({ id: id }).toArray();
-    res.send(collection);
+// Read Single (GET)
+app.get("/products/:id", async (req, res) => {
+  const { ObjectId } = await import("mongodb");
+  const project = await demoCollection.findOne({ _id: new ObjectId(req.params.id) });
+  if (!project) return res.status(404).send("Not Found");
+  res.json(project);
 });
 
-// Route: Get categories only
-app.get("/categories", async (req, res) => {
-  try {
-    const raw = await db.collection("demo").find({}).toArray(); // 🔁 Replace with your collection
-    const categoryBlock = raw.find(doc => Array.isArray(doc.categories));
+// Update Full (PUT)
+app.put("/products/:id", async (req, res) => {
+  const { ObjectId } = await import("mongodb");
+  const { title, price, category, description, imageBase64 } = req.body;
 
-    if (!categoryBlock || !categoryBlock.categories) {
-      return res.status(404).json({ error: "Categories not found" });
-    }
+  const old = await demoCollection.findOne({ _id: new ObjectId(req.params.id) });
+  if (!old) return res.status(404).send("Not Found");
 
-    const categories = [];
-    for (let i = 0; i < categoryBlock.categories.length; i += 2) {
-      categories.push({
-        name: categoryBlock.categories[i]?.name || "Unknown",
-        image: categoryBlock.categories[i + 1]?.image || "N/A"
-      });
-    }
-
-    res.json(categories);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch categories", details: err });
+  let image = old.image;
+  if (imageBase64) {
+    if (existsSync(`images/${old.image}`)) await unlink(`images/${old.image}`);
+    image = `${Date.now()}.png`;
+    await writeFile(`images/${image}`, imageBase64, "base64");
   }
-});
 
-
-app.get("/products/category/:category", async (req, res) => {
-    const category = req.params.category;
-    const collection = await db.collection("demo").find({ category: category }).toArray();
-    res.send(collection);
-});
-
-app.get("/products/categorielist", async (req, res) => {
-    try {
-        const collection = await db.collection("demo").find().toArray();
-        
-        // Extract all categories from the products
-        const categories = collection.map(item => item.category);
-
-        // Optional: remove duplicates
-        const uniqueCategories = [...new Set(categories)];
-
-        res.set("Content-Type", "application/json");
-        res.json(uniqueCategories);
-    } catch (err) {
-        res.status(500).send({ error: "Failed to fetch product categories" });
+  const result = await demoCollection.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    {
+      $set: { title, price, category, description, image },
     }
+  );
+
+  res.json(result);
 });
 
-app.listen(Port,()=>{
-    console.log(`server is running http://127.0.0.1:${Port}`);
+// Update Partial (PATCH)
+app.patch("/products/:id", async (req, res) => {
+  const { ObjectId } = await import("mongodb");
+  const updateFields = req.body;
+
+  if (updateFields.imageBase64) {
+    const old = await demoCollection.findOne({ _id: new ObjectId(req.params.id) });
+    if (old?.image && existsSync(`images/${old.image}`)) {
+      await unlink(`images/${old.image}`);
+    }
+    const newImage = `${Date.now()}.png`;
+    await writeFile(`images/${newImage}`, updateFields.imageBase64, "base64");
+    updateFields.image = newImage;
+    delete updateFields.imageBase64;
+  }
+
+  const result = await demoCollection.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: updateFields }
+  );
+
+  res.json(result);
 });
+
+// Delete (DELETE)
+app.delete("/products/:id", async (req, res) => {
+  const { ObjectId } = await import("mongodb");
+  const project = await demoCollection.findOne({ _id: new ObjectId(req.params.id) });
+
+  if (!project) return res.status(404).send("Not Found");
+
+  if (existsSync(`images/${project.image}`)) {
+    await unlink(`images/${project.image}`);
+  }
+
+  const result = await demoCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+  res.json(result);
+});
+
+app.listen(process.env.PORT, () =>
+  console.log(`🚀 Server running on http://localhost:${process.env.PORT}`)
+);
