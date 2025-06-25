@@ -1,127 +1,67 @@
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
-
-import { writeFile, unlink } from "fs/promises";
-import path from "path";
-import { existsSync } from "fs";
+import dotenv from "dotenv";
 import { MongoConnect } from "./MongoDB.js";
+
 
 dotenv.config();
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: "10mb" }));
-app.use("/images", express.static("images"));
+const PORT = process.env.PORT || 6000;
 
+// const mongoURL = "mongodb://localhost:27017";
+// const client = new MongoClient(mongoURL);
+// await client.connect();
 
 const db = await MongoConnect();
-const demoCollection = db.collection("demo")
 
-// Create (POST)
-app.post("/products", async (req, res) => {
-  const { title, price, category, description, imageBase64 } = req.body;
+const productsCollection = db.collection("products");
+const categoriesCollection = db.collection("products");
 
-  if (!imageBase64) return res.status(400).send("Image required");
+app.use(cors());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
-  const imageName = `${Date.now()}.png`;
-  const imagePath = path.join("images", imageName);
-
-  await writeFile(imagePath, imageBase64, "base64");
-
-  const result = await demoCollection.insertOne({
-    title,
-    price,
-    category,
-    description,
-    image: imageName,
-  });
-
-  res.status(201).json(result);
-});
-
-// Read All (GET)
+/**
+ * GET all products
+ */
 app.get("/products", async (req, res) => {
-  const projects = await demoCollection.find().toArray();
-  res.json(projects);
-});
-app.get("/products/categories", async (req, res) => {
-  const projects = await demoCollection.find().toArray()
-  const categoriesdata =  projects.map((items)=>items.categories);
-  res.json(categoriesdata);
+  const products = await productsCollection.find().toArray();
+ const prolist = products.map((items)=>items.products);
+ res.send(prolist)
 });
 
-// Read Single (GET)
-app.get("/products/:id", async (req, res) => {
-  const { ObjectId } = await import("mongodb");
-  const project = await demoCollection.findOne({ _id: new ObjectId(req.params.id) });
-  if (!project) return res.status(404).send("Not Found");
-  res.json(project);
-});
+/**
+ * GET all categories (with name and image)
+ */
 
-// Update Full (PUT)
-app.put("/products/:id", async (req, res) => {
-  const { ObjectId } = await import("mongodb");
-  const { title, price, category, description, imageBase64 } = req.body;
 
-  const old = await demoCollection.findOne({ _id: new ObjectId(req.params.id) });
-  if (!old) return res.status(404).send("Not Found");
 
-  let image = old.image;
-  if (imageBase64) {
-    if (existsSync(`images/${old.image}`)) await unlink(`images/${old.image}`);
-    image = `${Date.now()}.png`;
-    await writeFile(`images/${image}`, imageBase64, "base64");
+app.get("/categories", async (req, res) => {
+  const categoriesRaw = await categoriesCollection.findOne();
+  
+  // Handle the alternating name/image array structure
+  const categories = [];
+  for (let i = 0; i < categoriesRaw.categories.length; i += 2) {
+    const nameObj = categoriesRaw.categories[i];
+    const imageObj = categoriesRaw.categories[i + 1];
+    categories.push({
+      name: nameObj.name,
+      image: imageObj.image
+    });
   }
 
-  const result = await demoCollection.updateOne(
-    { _id: new ObjectId(req.params.id) },
-    {
-      $set: { title, price, category, description, image },
-    }
-  );
-
-  res.json(result);
+  res.json(categories);
 });
 
-// Update Partial (PATCH)
-app.patch("/products/:id", async (req, res) => {
-  const { ObjectId } = await import("mongodb");
-  const updateFields = req.body;
-
-  if (updateFields.imageBase64) {
-    const old = await demoCollection.findOne({ _id: new ObjectId(req.params.id) });
-    if (old?.image && existsSync(`images/${old.image}`)) {
-      await unlink(`images/${old.image}`);
-    }
-    const newImage = `${Date.now()}.png`;
-    await writeFile(`images/${newImage}`, updateFields.imageBase64, "base64");
-    updateFields.image = newImage;
-    delete updateFields.imageBase64;
-  }
-
-  const result = await demoCollection.updateOne(
-    { _id: new ObjectId(req.params.id) },
-    { $set: updateFields }
-  );
-
-  res.json(result);
+/**
+ * GET products by category name
+ */
+app.get("/categories/:name", async (req, res) => {
+  const categoryName = req.params.name;
+  const matchedProducts = await productsCollection.find({ category: categoryName }).toArray();
+  res.json(matchedProducts);
 });
 
-// Delete (DELETE)
-app.delete("/products/:id", async (req, res) => {
-  const { ObjectId } = await import("mongodb");
-  const project = await demoCollection.findOne({ _id: new ObjectId(req.params.id) });
-
-  if (!project) return res.status(404).send("Not Found");
-
-  if (existsSync(`images/${project.image}`)) {
-    await unlink(`images/${project.image}`);
-  }
-
-  const result = await demoCollection.deleteOne({ _id: new ObjectId(req.params.id) });
-  res.json(result);
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
-
-app.listen(process.env.PORT, () =>
-  console.log(`🚀 Server running on http://localhost:${process.env.PORT}`)
-);
